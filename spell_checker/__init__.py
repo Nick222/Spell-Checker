@@ -983,6 +983,35 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
             ]
         )
 
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+        print(
+            'PREVIEW:',
+            repr(word),
+            'occurrence =',
+            self.current_occurrence,
+            'file =',
+            filename,
+            'line =',
+            line_number
+        )
+
+        actual_lines = filename.read_text(
+            encoding='utf-8'
+        ).splitlines()
+
+        actual_line = actual_lines[line_number - 1]
+
+        print(
+            'ACTUAL:',
+            'contains_word =',
+            word in actual_line,
+            'line_length =',
+            len(actual_line)
+        )
+
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
         self.current_filename = filename
 
         self.word_label.set_text(
@@ -1035,52 +1064,13 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
                         r'(?<![A-Za-zА-Яа-яЁё])'
                         + re.escape(word)
                         + r'(?![A-Za-zА-Яа-яЁё])',
-                        re.IGNORECASE
+                        0
                     )
 
                     matches = list(
                         pattern.finditer(
                             source_line
                         )
-                    )
-
-                    print(
-                        '\n=== PREVIEW SOURCE ==='
-                    )
-                    print(
-                        'word =',
-                        repr(word)
-                    )
-                    print(
-                        'current_occurrence =',
-                        self.current_occurrence
-                    )
-                    print(
-                        'filename =',
-                        filename
-                    )
-                    print(
-                        'line_number =',
-                        line_number
-                    )
-                    print(
-                        'line_occurrence =',
-                        line_occurrence
-                    )
-                    print(
-                        'source_line =',
-                        repr(source_line)
-                    )
-                    print(
-                        'source_matches =',
-                        [
-                            (
-                                m.start(),
-                                m.end(),
-                                repr(m.group())
-                            )
-                            for m in matches
-                        ]
                     )
 
                     # Считаем, какое по счёту
@@ -1121,8 +1111,12 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
                             match.end() + 50
                         )
 
+                        # Запоминаем смещение отображаемого фрагмента
+                        display_prefix = '...' if left > 0 else ''
+                        display_offset = left - len(display_prefix)
+
                         source_line = (
-                            ('...' if left > 0 else '')
+                            display_prefix
                             + source_line[left:right]
                             + ('...' if right < len(source_line) else '')
                         )
@@ -1170,72 +1164,6 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
             selected_context_index
         ]
 
-        pattern = re.compile(
-            r'(?<![A-Za-zА-Яа-яЁё])'
-            + re.escape(word)
-            + r'(?![A-Za-zА-Яа-яЁё])',
-            re.IGNORECASE
-        )
-
-        print(
-            '--- PREVIEW DISPLAY ---'
-        )
-        print(
-            'selected_context_line =',
-            repr(selected_context_line)
-        )
-        print(
-            'display_matches =',
-            [
-                (
-                    m.start(),
-                    m.end(),
-                    repr(m.group())
-                )
-                for m in matches
-            ]
-        )
-
-        matches = list(
-            pattern.finditer(selected_context_line)
-        )
-
-        line_occurrences = [
-            i for i, occurrence in enumerate(self.errors[word])
-            if occurrence[0] == filename
-            and occurrence[1] == line_number
-        ]
-
-        if line_occurrences:
-            occurrence_in_line = line_occurrences.index(
-                self.current_occurrence
-            )
-        else:
-            occurrence_in_line = 0
-
-        match = (
-            matches[occurrence_in_line]
-            if occurrence_in_line < len(matches)
-            else None
-        )
-
-        print(
-            'occurrence_in_line =',
-            occurrence_in_line
-        )
-        print(
-            'selected_match =',
-            (
-                (
-                    match.start(),
-                    match.end(),
-                    repr(match.group())
-                )
-                if match
-                else None
-            )
-        )
-
         if match:
 
             line_start = 0
@@ -1244,8 +1172,8 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
                     '\n'.join(context[:selected_context_index])
                 ) + 1
 
-            word_start = line_start + match.start()
-            word_end = line_start + match.end()
+            word_start = line_start + match.start() - display_offset
+            word_end = line_start + match.end() - display_offset
 
             start_iter = buffer.get_iter_at_offset(
                 word_start
@@ -1497,7 +1425,7 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
                 r'(?<![A-Za-zА-Яа-яЁё])'
                 + re.escape(word)
                 + r'(?![A-Za-zА-Яа-яЁё])',
-                re.IGNORECASE
+                0
             )
 
             for filename in self.files:
