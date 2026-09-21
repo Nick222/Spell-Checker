@@ -92,7 +92,7 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
         )
 
         self.check_window.set_default_size(
-            1000,
+            1100,
             700
         )
 
@@ -210,6 +210,51 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
             self._word_selected
         )
 
+        # -------------------------------------------------
+        # Word search
+        # -------------------------------------------------
+
+        search_box = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL,
+            spacing=6
+        )
+
+        search_label = Gtk.Label(
+            label='Поиск:'
+        )
+
+        search_box.pack_end(
+            search_label,
+            False,
+            False,
+            0
+        )
+
+        self.word_search = Gtk.SearchEntry()
+
+        self.word_search.set_placeholder_text(
+            'Искать слово...'
+        )
+
+        self.word_search.connect(
+            'search-changed',
+            self._search_word
+        )
+
+        search_box.pack_end(
+            self.word_search,
+            False,
+            False,
+            0
+        )
+
+        vbox.pack_start(
+            search_box,
+            False,
+            False,
+            0
+        )
+
         scroll = Gtk.ScrolledWindow()
 
         scroll.set_policy(
@@ -254,6 +299,21 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
         # -------------------------------------------------
         # Context
         # -------------------------------------------------
+
+        self.filename_label = Gtk.Label(
+            label=''
+        )
+
+        self.filename_label.set_xalign(
+            0
+        )
+
+        vbox.pack_start(
+            self.filename_label,
+            False,
+            False,
+            0
+        )
 
         self.context_view = Gtk.TextView()
 
@@ -835,6 +895,41 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
         return False
 
     # =====================================================
+    # Search word
+    # =====================================================
+
+    def _search_word(self, entry):
+
+        text = entry.get_text().strip().lower()
+
+        if not text:
+            return
+
+        for iterator in self.model:
+
+            word = iterator[0]
+
+            if text in word.lower():
+
+                path = iterator.path
+
+                self.tree.set_cursor(
+                    path,
+                    None,
+                    False
+                )
+
+                self.tree.scroll_to_cell(
+                    path,
+                    None,
+                    False,
+                    0.0,
+                    0.0
+                )
+
+                return
+
+    # =====================================================
     # Word selected
     # =====================================================
 
@@ -932,31 +1027,133 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
                     else '    '
                 )
 
+                source_line = all_lines[index]
+
+                if number == line_number:
+
+                    pattern = re.compile(
+                        r'(?<![A-Za-zА-Яа-яЁё])'
+                        + re.escape(word)
+                        + r'(?![A-Za-zА-Яа-яЁё])',
+                        re.IGNORECASE
+                    )
+
+                    matches = list(
+                        pattern.finditer(
+                            source_line
+                        )
+                    )
+
+                    print(
+                        '\n=== PREVIEW SOURCE ==='
+                    )
+                    print(
+                        'word =',
+                        repr(word)
+                    )
+                    print(
+                        'current_occurrence =',
+                        self.current_occurrence
+                    )
+                    print(
+                        'filename =',
+                        filename
+                    )
+                    print(
+                        'line_number =',
+                        line_number
+                    )
+                    print(
+                        'line_occurrence =',
+                        line_occurrence
+                    )
+                    print(
+                        'source_line =',
+                        repr(source_line)
+                    )
+                    print(
+                        'source_matches =',
+                        [
+                            (
+                                m.start(),
+                                m.end(),
+                                repr(m.group())
+                            )
+                            for m in matches
+                        ]
+                    )
+
+                    # Считаем, какое по счёту
+                    # вхождение слова находится
+                    # в этой строке.
+                    line_occurrence = 0
+
+                    for occurrence in occurrences[
+                        :self.current_occurrence
+                    ]:
+
+                        if (
+                            occurrence[0] == filename
+                            and occurrence[1] == line_number
+                        ):
+                            line_occurrence += 1
+
+                    self.current_line_occurrence = line_occurrence
+
+                    if matches:
+
+                        match_index = min(
+                            line_occurrence,
+                            len(matches) - 1
+                        )
+
+                        match = matches[
+                            match_index
+                        ]
+
+                        left = max(
+                            0,
+                            match.start() - 50
+                        )
+
+                        right = min(
+                            len(source_line),
+                            match.end() + 50
+                        )
+
+                        source_line = (
+                            ('...' if left > 0 else '')
+                            + source_line[left:right]
+                            + ('...' if right < len(source_line) else '')
+                        )
+
                 context.append(
                     '{}{:6}: {}'.format(
                         marker,
                         number,
-                        all_lines[index]
+                        source_line
                     )
                 )
 
-            text = (
+            self.filename_label.set_text(
                 str(filename)
-                + '\n\n'
-                + '\n'.join(context)
             )
 
+            text = '\n'.join(context)
+
         except Exception:
-            text = (
-                '{}:{}\n\n{}'.format(
+
+            self.filename_label.set_text(
+                '{}:{}'.format(
                     filename,
-                    line_number,
-                    line
+                    line_number
                 )
             )
 
             buffer = self.context_view.get_buffer()
-            buffer.set_text(text)
+            buffer.set_text(
+                line
+            )
 
             return
 
@@ -980,44 +1177,81 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
             re.IGNORECASE
         )
 
-        match = pattern.search(
-            selected_context_line
+        print(
+            '--- PREVIEW DISPLAY ---'
+        )
+        print(
+            'selected_context_line =',
+            repr(selected_context_line)
+        )
+        print(
+            'display_matches =',
+            [
+                (
+                    m.start(),
+                    m.end(),
+                    repr(m.group())
+                )
+                for m in matches
+            ]
+        )
+
+        matches = list(
+            pattern.finditer(selected_context_line)
+        )
+
+        line_occurrences = [
+            i for i, occurrence in enumerate(self.errors[word])
+            if occurrence[0] == filename
+            and occurrence[1] == line_number
+        ]
+
+        if line_occurrences:
+            occurrence_in_line = line_occurrences.index(
+                self.current_occurrence
+            )
+        else:
+            occurrence_in_line = 0
+
+        match = (
+            matches[occurrence_in_line]
+            if occurrence_in_line < len(matches)
+            else None
+        )
+
+        print(
+            'occurrence_in_line =',
+            occurrence_in_line
+        )
+        print(
+            'selected_match =',
+            (
+                (
+                    match.start(),
+                    match.end(),
+                    repr(match.group())
+                )
+                if match
+                else None
+            )
         )
 
         if match:
-            line_start = len(
-                str(filename)
-            ) + 2
 
+            line_start = 0
             if selected_context_index > 0:
-                line_start += len(
-                    '\n'.join(
-                        context[
-                            :selected_context_index
-                        ]
-                    )
+                line_start = len(
+                    '\n'.join(context[:selected_context_index])
                 ) + 1
 
-            word_start = (
-                line_start
-                + match.start()
-            )
+            word_start = line_start + match.start()
+            word_end = line_start + match.end()
 
-            word_end = (
-                line_start
-                + match.end()
+            start_iter = buffer.get_iter_at_offset(
+                word_start
             )
-
-            start_iter = (
-                buffer.get_iter_at_offset(
-                    word_start
-                )
-            )
-
-            end_iter = (
-                buffer.get_iter_at_offset(
-                    word_end
-                )
+            end_iter = buffer.get_iter_at_offset(
+                word_end
             )
 
             buffer.apply_tag(
@@ -1199,6 +1433,10 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
         )
 
         self.word_label.set_text(
+            ''
+        )
+
+        self.filename_label.set_text(
             ''
         )
 
@@ -1445,6 +1683,38 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
             filename,
         )
 
+    def _scroll_to_opened_word(
+        self,
+        textview,
+        buffer,
+        mark
+    ):
+
+        try:
+
+            iterator = buffer.get_iter_at_mark(
+                mark
+            )
+
+            textview.scroll_to_iter(
+                iterator,
+                0.2,
+                True,
+                0.5,
+                0.5
+            )
+
+            textview.grab_focus()
+
+            buffer.delete_mark(
+                mark
+            )
+
+        except Exception:
+            return False
+
+        return False
+
     # =====================================================
     # Open note
     # =====================================================
@@ -1471,6 +1741,87 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
 
             self.window.pageview.set_page(
                 page
+            )
+
+            textview = self.window.pageview.textview
+            buffer = textview.get_buffer()
+
+            word = self.current_word
+
+            if word is None:
+                return
+
+            pattern = re.compile(
+                r'(?<![A-Za-zА-Яа-яЁё])'
+                + re.escape(word)
+                + r'(?![A-Za-zА-Яа-яЁё])',
+                0
+            )
+
+            text = buffer.get_text(
+                buffer.get_start_iter(),
+                buffer.get_end_iter(),
+                True
+            )
+
+            matches = list(
+                pattern.finditer(text)
+            )
+
+            if not matches:
+                return
+
+            occurrences = self.errors.get(
+                self.current_word,
+                []
+            )
+
+            note_occurrence = 0
+
+            for occurrence in occurrences[
+                :self.current_occurrence
+            ]:
+
+                if occurrence[0] == filename:
+                    note_occurrence += 1
+
+            index = min(
+                note_occurrence,
+                len(matches) - 1
+            )
+
+            match = matches[index]
+
+            start_iter = (
+                buffer.get_iter_at_offset(
+                    match.start()
+                )
+            )
+
+            end_iter = (
+                buffer.get_iter_at_offset(
+                    match.end()
+                )
+            )
+
+            buffer.select_range(
+                start_iter,
+                end_iter
+            )
+
+            textview.grab_focus()
+
+            mark = buffer.create_mark(
+                None,
+                start_iter,
+                True
+            )
+
+            GLib.idle_add(
+                self._scroll_to_opened_word,
+                textview,
+                buffer,
+                mark
             )
 
         except Exception as error:
