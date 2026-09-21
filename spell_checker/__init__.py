@@ -960,6 +960,10 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
 
             return
 
+        buffer = self.context_view.get_buffer()
+
+        buffer.set_text(text)
+
         # Выделяем найденное слово в текущей строке.
         selected_context_index = (
             line_number - 1 - start
@@ -1438,7 +1442,7 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
         )
 
         self._open_note(
-            filename
+            filename,
         )
 
     # =====================================================
