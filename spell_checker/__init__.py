@@ -1,3 +1,4 @@
+# Code version: 2026-09-21 22:15
 from pathlib import Path
 import re
 import threading
@@ -983,35 +984,6 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
             ]
         )
 
-# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
-        print(
-            'PREVIEW:',
-            repr(word),
-            'occurrence =',
-            self.current_occurrence,
-            'file =',
-            filename,
-            'line =',
-            line_number
-        )
-
-        actual_lines = filename.read_text(
-            encoding='utf-8'
-        ).splitlines()
-
-        actual_line = actual_lines[line_number - 1]
-
-        print(
-            'ACTUAL:',
-            'contains_word =',
-            word in actual_line,
-            'line_length =',
-            len(actual_line)
-        )
-
-# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
         self.current_filename = filename
 
         self.word_label.set_text(
@@ -1113,7 +1085,6 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
 
                         # Запоминаем смещение отображаемого фрагмента
                         display_prefix = '...' if left > 0 else ''
-                        display_offset = left - len(display_prefix)
 
                         source_line = (
                             display_prefix
@@ -1164,20 +1135,50 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
             selected_context_index
         ]
 
-        if match:
+        line_start = 0
 
-            line_start = 0
-            if selected_context_index > 0:
-                line_start = len(
-                    '\n'.join(context[:selected_context_index])
-                ) + 1
+        if selected_context_index > 0:
+            line_start = len(
+                '\n'.join(
+                    context[
+                        :selected_context_index
+                    ]
+                )
+            ) + 1
 
-            word_start = line_start + match.start() - display_offset
-            word_end = line_start + match.end() - display_offset
+        # Ищем слово уже в реально отображаемой
+        # строке предпросмотра.
+        display_matches = list(
+            pattern.finditer(
+                selected_context_line
+            )
+        )
+
+        if display_matches:
+
+            display_match_index = min(
+                self.current_line_occurrence,
+                len(display_matches) - 1
+            )
+
+            display_match = display_matches[
+                display_match_index
+            ]
+
+            word_start = (
+                line_start
+                + display_match.start()
+            )
+
+            word_end = (
+                line_start
+                + display_match.end()
+            )
 
             start_iter = buffer.get_iter_at_offset(
                 word_start
             )
+
             end_iter = buffer.get_iter_at_offset(
                 word_end
             )
