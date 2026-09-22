@@ -1,4 +1,4 @@
-# Code version: 2026-09-21 22:15
+# Code version: 2026-09-22 07:15
 from pathlib import Path
 import re
 import threading
@@ -652,40 +652,36 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
 
             total = len(self.files)
 
-            error_file = Path(
-                'spell_checker_errors.txt'
+            for filename in self.files:
+
+                if self.stop_event.is_set():
+                    break
+
+                self._check_file(
+                    filename,
+                    self.dictionary,
+                )
+
+                self.checked += 1
+
+                GLib.idle_add(
+                    self._update_progress,
+                    self.checked,
+                    total
+                )
+
+            words_file = Path(
+                'spell_checker_words.txt'
             )
 
-            with error_file.open(
+            with words_file.open(
                 'w',
                 encoding='utf-8'
             ) as output:
 
-                output.write(
-                    '# Spell Checker diagnostic output\n'
-                )
-
-                output.write(
-                    '# Format: filename:line:word\n\n'
-                )
-
-                for filename in self.files:
-
-                    if self.stop_event.is_set():
-                        break
-
-                    self._check_file(
-                        filename,
-                        self.dictionary,
-                        output
-                    )
-
-                    self.checked += 1
-
-                    GLib.idle_add(
-                        self._update_progress,
-                        self.checked,
-                        total
+                for word in sorted(self.errors):
+                    output.write(
+                        word + '\n'
                     )
 
         except Exception as error:
@@ -709,7 +705,6 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
         self,
         filename,
         dictionary,
-        output
     ):
 
         try:
@@ -765,15 +760,6 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
 
                 if dictionary.check(word):
                     continue
-
-                if output is not None:
-                    output.write(
-                        '{}:{}:{}\n'.format(
-                            filename,
-                            line_number,
-                            word
-                        )
-                    )
 
                 if word not in self.errors:
                     self.errors[word] = []
