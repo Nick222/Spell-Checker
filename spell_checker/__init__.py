@@ -73,6 +73,8 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
         self.current_word = None
         self.current_occurrence = 0
 
+        self.pending_replacement = None
+
         self.current_filename = None
 
         self.dictionary = None
@@ -513,6 +515,53 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
             suggestions,
             False,
             True,
+            0
+        )
+
+        replacement_box = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL,
+            spacing=8
+        )
+
+        self.replace_button = Gtk.Button(
+            label='Заменить'
+        )
+
+        self.replace_button.set_sensitive(
+            False
+        )
+
+        self.replace_button.connect(
+            'clicked',
+            self._replace_selected_suggestion
+        )
+
+        replacement_box.pack_start(
+            self.replace_button,
+            False,
+            False,
+            0
+        )
+
+        self.replacement_status_label = Gtk.Label(
+            label=''
+        )
+
+        self.replacement_status_label.set_xalign(
+            0
+        )
+
+        replacement_box.pack_start(
+            self.replacement_status_label,
+            True,
+            True,
+            0
+        )
+
+        vbox.pack_start(
+            replacement_box,
+            False,
+            False,
             0
         )
 
@@ -1121,6 +1170,16 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
 
         word = self.current_word
 
+        self.pending_replacement = None
+
+        self.replace_button.set_sensitive(
+            False
+        )
+
+        self.replacement_status_label.set_text(
+            ''
+        )
+
         if word is None:
             return
 
@@ -1488,8 +1547,16 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
 
         replacement = model[iterator][0]
 
-        self._replace_current_occurrence(
-            replacement
+        self.pending_replacement = replacement
+
+        self.replace_button.set_sensitive(
+            True
+        )
+
+        self.replacement_status_label.set_text(
+            'Выбрано: {}'.format(
+                replacement
+            )
         )
 
     def _dictionary_suggestion_selected(
@@ -1506,8 +1573,40 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
 
         replacement = model[iterator][0]
 
+        self.pending_replacement = replacement
+
+        self.replace_button.set_sensitive(
+            True
+        )
+
+        self.replacement_status_label.set_text(
+            'Выбрано: {}'.format(
+                replacement
+            )
+        )
+
+    def _replace_selected_suggestion(
+        self,
+        button
+    ):
+
+        replacement = self.pending_replacement
+
+        if replacement is None:
+            return
+
+        self.pending_replacement = None
+
+        self.replace_button.set_sensitive(
+            False
+        )
+
         self._replace_current_occurrence(
             replacement
+        )
+
+        self.replacement_status_label.set_text(
+            'Заменено'
         )
 
     def _replace_current_occurrence(
@@ -1731,7 +1830,7 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
                 current_iter
             )
 
-            self.treeview.set_cursor(
+            self.tree.set_cursor(
                 path
             )
 
@@ -2105,52 +2204,36 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
 
             match = matches[index]
 
-            start_iter = buffer.get_start_iter()
-            end_iter = buffer.get_end_iter()
-
-            found = 0
-
-            while True:
-
-                result = start_iter.forward_search(
-                    word,
-                    Gtk.TextSearchFlags.TEXT_ONLY,
-                    end_iter
+            start_iter = (
+                buffer.get_iter_at_offset(
+                    match.start()
                 )
+            )
 
-                if result is None:
-                    return False
+            end_iter = (
+                buffer.get_iter_at_offset(
+                    match.end()
+                )
+            )
 
-                match_start, match_end = result
+            buffer.select_range(
+                start_iter,
+                end_iter
+            )
 
-                if found == index:
+            textview.scroll_to_iter(
+                start_iter,
+                0.2,
+                True,
+                0.5,
+                0.5
+            )
 
-                    buffer.select_range(
-                        match_start,
-                        match_end
-                    )
+            textview.grab_focus()
 
-                    textview.scroll_to_iter(
-                        match_start,
-                        0.2,
-                        True,
-                        0.5,
-                        0.5
-                    )
-
-                    textview.grab_focus()
-
-                    return False
-
-                found += 1
-                start_iter = match_end
+            return False
 
         except Exception as e:
-
-            print(
-                "PREVIEW SELECT ERROR:",
-                repr(e)
-            )
 
             import traceback
             traceback.print_exc()
