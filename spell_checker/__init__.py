@@ -1694,19 +1694,46 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
     # =====================================================
 
     def _rebuild_word_list(self):
+
+        current_word = self.current_word
+
         self.updating_model = True
 
         self.model.clear()
 
-        words = sorted(self.errors.keys(), key=lambda word: word.lower())
+        words = sorted(
+            self.errors.keys(),
+            key=lambda word: word.lower()
+        )
+
+        current_iter = None
+
         for word in words:
-            self.model.append([word, len(self.errors[word])])
+
+            tree_iter = self.model.append(
+                [word, len(self.errors[word])]
+            )
+
+            if word == current_word:
+                current_iter = tree_iter
 
         self.updating_model = False
 
         self.status_label.set_text(
-            'Осталось уникальных слов: {}'.format(len(self.errors))
+            'Осталось уникальных слов: {}'.format(
+                len(self.errors)
+            )
         )
+
+        if current_iter is not None:
+
+            path = self.model.get_path(
+                current_iter
+            )
+
+            self.treeview.set_cursor(
+                path
+            )
 
     # =====================================================
     # Clear context
@@ -1970,38 +1997,6 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
             filename,
         )
 
-    def _scroll_to_opened_word(
-        self,
-        textview,
-        buffer,
-        mark
-    ):
-
-        try:
-
-            iterator = buffer.get_iter_at_mark(
-                mark
-            )
-
-            textview.scroll_to_iter(
-                iterator,
-                0.2,
-                True,
-                0.5,
-                0.5
-            )
-
-            textview.grab_focus()
-
-            buffer.delete_mark(
-                mark
-            )
-
-        except Exception:
-            return False
-
-        return False
-
     # =====================================================
     # Open note
     # =====================================================
@@ -2030,13 +2025,58 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
                 page
             )
 
-            textview = self.window.pageview.textview
-            buffer = textview.get_buffer()
-
             word = self.current_word
 
             if word is None:
                 return
+
+            occurrences = self.errors.get(
+                self.current_word,
+                []
+            )
+
+            note_occurrence = 0
+
+            for occurrence in occurrences[
+                :self.current_occurrence
+            ]:
+
+                if occurrence[0] == filename:
+                    note_occurrence += 1
+
+            GLib.idle_add(
+                self._select_opened_word,
+                word,
+                note_occurrence
+            )
+
+        except Exception as error:
+
+            dialog = Gtk.MessageDialog(
+                transient_for=self.check_window,
+                flags=Gtk.DialogFlags.MODAL,
+                message_type=Gtk.MessageType.ERROR,
+                buttons=Gtk.ButtonsType.OK,
+                text='Не удалось открыть заметку'
+            )
+
+            dialog.format_secondary_text(
+                str(error)
+            )
+
+            dialog.run()
+            dialog.destroy()
+
+    def _select_opened_word(
+        self,
+        word,
+        note_occurrence
+    ):
+
+        try:
+
+            textview = self.window.pageview.textview
+            buffer = textview.get_buffer()
 
             pattern = re.compile(
                 r'(?<![A-Za-zА-Яа-яЁё])'
@@ -2056,21 +2096,7 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
             )
 
             if not matches:
-                return
-
-            occurrences = self.errors.get(
-                self.current_word,
-                []
-            )
-
-            note_occurrence = 0
-
-            for occurrence in occurrences[
-                :self.current_occurrence
-            ]:
-
-                if occurrence[0] == filename:
-                    note_occurrence += 1
+                return False
 
             index = min(
                 note_occurrence,
@@ -2079,54 +2105,57 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
 
             match = matches[index]
 
-            start_iter = (
-                buffer.get_iter_at_offset(
-                    match.start()
+            start_iter = buffer.get_start_iter()
+            end_iter = buffer.get_end_iter()
+
+            found = 0
+
+            while True:
+
+                result = start_iter.forward_search(
+                    word,
+                    Gtk.TextSearchFlags.TEXT_ONLY,
+                    end_iter
                 )
+
+                if result is None:
+                    return False
+
+                match_start, match_end = result
+
+                if found == index:
+
+                    buffer.select_range(
+                        match_start,
+                        match_end
+                    )
+
+                    textview.scroll_to_iter(
+                        match_start,
+                        0.2,
+                        True,
+                        0.5,
+                        0.5
+                    )
+
+                    textview.grab_focus()
+
+                    return False
+
+                found += 1
+                start_iter = match_end
+
+        except Exception as e:
+
+            print(
+                "PREVIEW SELECT ERROR:",
+                repr(e)
             )
 
-            end_iter = (
-                buffer.get_iter_at_offset(
-                    match.end()
-                )
-            )
+            import traceback
+            traceback.print_exc()
 
-            buffer.select_range(
-                start_iter,
-                end_iter
-            )
-
-            textview.grab_focus()
-
-            mark = buffer.create_mark(
-                None,
-                start_iter,
-                True
-            )
-
-            GLib.idle_add(
-                self._scroll_to_opened_word,
-                textview,
-                buffer,
-                mark
-            )
-
-        except Exception as error:
-
-            dialog = Gtk.MessageDialog(
-                transient_for=self.check_window,
-                flags=Gtk.DialogFlags.MODAL,
-                message_type=Gtk.MessageType.ERROR,
-                buttons=Gtk.ButtonsType.OK,
-                text='Не удалось открыть заметку'
-            )
-
-            dialog.format_secondary_text(
-                str(error)
-            )
-
-            dialog.run()
-            dialog.destroy()
+        return False
 
     # =====================================================
     # Error
