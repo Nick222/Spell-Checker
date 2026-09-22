@@ -1,5 +1,7 @@
-# Code version: 2026-09-22 07:15
+# Code version: 2026-09-22 08:35
 from pathlib import Path
+from collections import Counter
+from difflib import get_close_matches
 import re
 import threading
 
@@ -74,6 +76,8 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
         self.current_filename = None
 
         self.dictionary = None
+
+        self.corpus = Counter()
 
         self.updating_model = False
 
@@ -365,6 +369,154 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
         )
 
         # -------------------------------------------------
+        # Suggestions
+        # -------------------------------------------------
+
+        suggestions = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL,
+            spacing=12
+        )
+
+        corpus_box = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL,
+            spacing=3
+        )
+
+        corpus_label = Gtk.Label(
+            label='Из вашего корпуса:'
+        )
+
+        corpus_label.set_xalign(
+            0
+        )
+
+        corpus_box.pack_start(
+            corpus_label,
+            False,
+            False,
+            0
+        )
+
+        self.corpus_model = Gtk.ListStore(
+            str
+        )
+
+        self.corpus_tree = Gtk.TreeView(
+            model=self.corpus_model
+        )
+
+        self._add_suggestion_column(
+            self.corpus_tree
+        )
+
+        self.corpus_tree.connect(
+            'cursor-changed',
+            self._corpus_suggestion_selected
+        )
+
+        corpus_scroll = Gtk.ScrolledWindow()
+
+        corpus_scroll.set_policy(
+            Gtk.PolicyType.AUTOMATIC,
+            Gtk.PolicyType.AUTOMATIC
+        )
+
+        corpus_scroll.set_min_content_height(
+            100
+        )
+
+        corpus_scroll.add(
+            self.corpus_tree
+        )
+
+        corpus_box.pack_start(
+            corpus_scroll,
+            True,
+            True,
+            0
+        )
+
+        dictionary_box = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL,
+            spacing=3
+        )
+
+        dictionary_label = Gtk.Label(
+            label='Из словаря:'
+        )
+
+        dictionary_label.set_xalign(
+            0
+        )
+
+        dictionary_box.pack_start(
+            dictionary_label,
+            False,
+            False,
+            0
+        )
+
+        self.dictionary_model = Gtk.ListStore(
+            str
+        )
+
+        self.dictionary_tree = Gtk.TreeView(
+            model=self.dictionary_model
+        )
+
+        self._add_suggestion_column(
+            self.dictionary_tree
+        )
+
+        self.dictionary_tree.connect(
+            'cursor-changed',
+            self._dictionary_suggestion_selected
+        )
+
+        dictionary_scroll = Gtk.ScrolledWindow()
+
+        dictionary_scroll.set_policy(
+            Gtk.PolicyType.AUTOMATIC,
+            Gtk.PolicyType.AUTOMATIC
+        )
+
+        dictionary_scroll.set_min_content_height(
+            100
+        )
+
+        dictionary_scroll.add(
+            self.dictionary_tree
+        )
+
+        dictionary_box.pack_start(
+            dictionary_scroll,
+            True,
+            True,
+            0
+        )
+
+        suggestions.pack_start(
+            corpus_box,
+            True,
+            True,
+            0
+        )
+
+        suggestions.pack_start(
+            dictionary_box,
+            True,
+            True,
+            0
+        )
+
+        vbox.pack_start(
+            suggestions,
+            False,
+            True,
+            0
+        )
+
+        # -------------------------------------------------
         # Navigation
         # -------------------------------------------------
 
@@ -570,6 +722,23 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
             column
         )
 
+    def _add_suggestion_column(
+        self,
+        tree
+    ):
+
+        renderer = Gtk.CellRendererText()
+
+        column = Gtk.TreeViewColumn(
+            'Вариант',
+            renderer,
+            text=0
+        )
+
+        tree.append_column(
+            column
+        )
+
     # =====================================================
     # Start
     # =====================================================
@@ -588,6 +757,8 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
 
         self.current_word = None
         self.current_occurrence = 0
+
+        self.corpus = Counter()
 
         root = Path(
             self.window.notebook.folder.path
@@ -757,6 +928,9 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
 
                 if self.stop_event.is_set():
                     return
+
+                if len(word) >= 3:
+                    self.corpus[word] += 1
 
                 if dictionary.check(word):
                     continue
@@ -949,6 +1123,10 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
 
         if word is None:
             return
+
+        self._show_suggestions(
+            word
+        )
 
         occurrences = self.errors.get(
             word,
@@ -1211,6 +1389,201 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
         self.ignore_button.set_sensitive(
             True
         )
+
+    # =====================================================
+    # Suggestions
+    # =====================================================
+
+    def _get_corpus_suggestions(
+        self,
+        word,
+        limit=15
+    ):
+
+        if len(word) < 3:
+            return []
+
+        lower_word = word.lower()
+
+        vocabulary = sorted({
+            candidate.lower()
+            for candidate in self.corpus
+            if candidate.lower() != lower_word
+        })
+
+        matches = get_close_matches(
+            lower_word,
+            vocabulary,
+            n=limit,
+            cutoff=0.55
+        )
+
+        result = []
+
+        for matched in matches:
+
+            candidates = [
+                candidate
+                for candidate in self.corpus
+                if candidate.lower() == matched
+            ]
+
+            candidates.sort(
+                key=lambda candidate: (
+                    candidate[0].isupper()
+                    != word[0].isupper(),
+                    -self.corpus[candidate]
+                )
+            )
+
+            if candidates:
+                result.append(
+                    candidates[0]
+                )
+
+        return result
+
+    def _show_suggestions(
+        self,
+        word
+    ):
+
+        self.corpus_model.clear()
+        self.dictionary_model.clear()
+
+        if word is None:
+            return
+
+        for candidate in self._get_corpus_suggestions(
+            word
+        ):
+
+            self.corpus_model.append(
+                [candidate]
+            )
+
+        if len(word) >= 3:
+
+            suggestions = self.dictionary.suggest(
+                word
+            )
+
+            for candidate in suggestions:
+
+                self.dictionary_model.append(
+                    [candidate]
+                )
+
+    def _corpus_suggestion_selected(
+        self,
+        tree
+    ):
+
+        selection = tree.get_selection()
+
+        model, iterator = selection.get_selected()
+
+        if iterator is None:
+            return
+
+        replacement = model[iterator][0]
+
+        self._replace_current_occurrence(
+            replacement
+        )
+
+    def _dictionary_suggestion_selected(
+        self,
+        tree
+    ):
+
+        selection = tree.get_selection()
+
+        model, iterator = selection.get_selected()
+
+        if iterator is None:
+            return
+
+        replacement = model[iterator][0]
+
+        self._replace_current_occurrence(
+            replacement
+        )
+
+    def _replace_current_occurrence(
+        self,
+        replacement
+    ):
+
+        if self.current_word is None:
+            return
+
+        old_word = self.current_word
+
+        self._open_note(
+            self.current_filename
+        )
+
+        textview = self.window.pageview.textview
+        buffer = textview.get_buffer()
+
+        selection = buffer.get_selection_bounds()
+
+        if not selection:
+            return
+
+        start_iter, end_iter = selection
+
+        buffer.delete(
+            start_iter,
+            end_iter
+        )
+
+        buffer.insert(
+            start_iter,
+            replacement
+        )
+
+        # Удаляем только текущее вхождение
+        # из списка ошибок.
+        occurrences = self.errors.get(
+            old_word,
+            []
+        )
+
+        if self.current_occurrence < len(occurrences):
+            del occurrences[
+                self.current_occurrence
+            ]
+
+        # Если ошибок этого слова больше нет —
+        # убираем слово целиком.
+        if not occurrences:
+
+            self.errors.pop(
+                old_word,
+                None
+            )
+
+            self.current_word = None
+            self.current_occurrence = 0
+
+            self._rebuild_word_list()
+            self._clear_context()
+
+            return
+
+        # Ошибки этого слова ещё есть.
+        self.current_occurrence = min(
+            self.current_occurrence,
+            len(occurrences) - 1
+        )
+
+        self._rebuild_word_list()
+
+        # Сразу показываем следующее оставшееся
+        # вхождение этого же ошибочного слова.
+        self._show_current_occurrence()
 
     # =====================================================
     # Navigation
@@ -1532,7 +1905,6 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
             self._check_file(
                 filename,
                 self.dictionary,
-                None
             )
 
             # Ищем, осталось ли в текущей заметке
@@ -1654,7 +2026,7 @@ class SpellCheckerMainWindowExtension(MainWindowExtension):
                 )
             )
 
-            self.window.pageview.set_page(
+            self.window.open_page(
                 page
             )
 
